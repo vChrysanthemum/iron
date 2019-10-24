@@ -1,6 +1,8 @@
 package iron
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -23,6 +25,10 @@ type Options struct {
 	AccessWhiteList   []string `json:"-"`
 	Log               *os.File `json:"-"`
 	IsTMPLAutoRefresh bool     `json:"-"`
+
+	HttpsListenStr string `json:"HttpsListenStr"`
+	HttpsCertPath  string `json:"HttpsCertPath"`
+	HttpsKeyPath   string `json:"HttpsKeyPath"`
 }
 
 func (p *Server) loadOptions(options Options) error {
@@ -84,6 +90,25 @@ func (p *Server) sanitizeOptions(options *Options) error {
 		for i := range options.AccessWhiteList {
 			options.AccessWhiteList[i] = strings.TrimSpace(options.AccessWhiteList[i])
 		}
+	}
+
+	return nil
+}
+
+func LoadOptionsFile(optionsFilePath string, options interface{}) error {
+	var (
+		err     error
+		content []byte
+	)
+
+	content, err = ioutil.ReadFile(optionsFilePath)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(content, options)
+	if err != nil {
+		return err
 	}
 
 	return nil

@@ -1,11 +1,11 @@
 package iron
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"net/http/fcgi"
 	"regexp"
-	"soloos/common/log"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -14,6 +14,7 @@ import (
 type Server struct {
 	NetListener         net.Listener
 	httpServer          *http.Server
+	httpsServer         *http.Server
 	httpMux             *ServeMux
 	isClosedAfterHandle bool
 
@@ -57,7 +58,15 @@ func (p *Server) Init(options Options) error {
 		MaxHeaderBytes: 1 << 20,
 	}
 
+	p.httpsServer = &http.Server{
+		Handler:        p.httpMux,
+		ReadTimeout:    90 * time.Second,
+		WriteTimeout:   90 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
 	http2.ConfigureServer(p.httpServer, &http2.Server{})
+	http2.ConfigureServer(p.httpsServer, &http2.Server{})
 
 	return nil
 }
@@ -104,7 +113,6 @@ func (p *Server) HandlerToServeHTTPFunc(handler func(*Request)) func(http.Respon
 
 func (p *Server) Serve() error {
 	var err error
-	log.Info("Server started, listen at:", p.Options.ListenStr)
 
 	p.isClosedAfterHandle = false
 
@@ -115,18 +123,51 @@ func (p *Server) Serve() error {
 
 	switch p.Options.ServeType {
 	case "fcgi":
+		log.Println("Server started (fcgi), listen at:", p.Options.ListenStr)
 		fcgi.Serve(p.NetListener, p.httpMux)
 
 	case "server":
+
+		var serveCount int = 0
+		var isHttpsEnabled = false
+		var isHttpEnabled = true
+
 		p.httpServer.Addr = p.Options.ListenStr
-		//err := p.httpServer.ListenAndServeTLS("./cert.pem", "./key.pem")
-		err = p.httpServer.Serve(p.NetListener.(*net.TCPListener))
-		if nil != err {
-			return err
+		isHttpEnabled = true
+		serveCount += 1
+
+		if p.Options.HttpsListenStr != "" {
+			p.httpsServer.Addr = p.Options.HttpsListenStr
+			isHttpsEnabled = true
+			serveCount += 1
+		}
+
+		var retChan = make(chan error, serveCount)
+
+		if isHttpsEnabled {
+			go func(retChan chan<- error) {
+				log.Println("Server started (https), listen at:", p.Options.HttpsListenStr)
+				retChan <- p.httpsServer.ListenAndServeTLS(p.Options.HttpsCertPath, p.Options.HttpsKeyPath)
+			}(retChan)
+		}
+
+		if isHttpEnabled {
+			go func(retChan chan<- error) {
+				log.Println("Server started (http), listen at:", p.Options.ListenStr)
+				retChan <- p.httpServer.Serve(p.NetListener.(*net.TCPListener))
+			}(retChan)
+		}
+
+		for i := 0; i < serveCount; i++ {
+			tmpErr := <-retChan
+			if tmpErr != nil {
+				log.Println("web server serve error, err:", tmpErr)
+				err = tmpErr
+			}
 		}
 	}
 
-	log.Info("Server closed.")
+	log.Println("Server closed.")
 
 	return nil
 

@@ -1,11 +1,11 @@
 package iron
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path"
 	"runtime/debug"
-	"soloos/common/log"
 	"strings"
 	"sync"
 )
@@ -187,8 +187,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if nil == err {
 			return
 		}
-		log.Error(string(debug.Stack()))
-		log.Error(err)
+		log.Println(string(debug.Stack()))
+		log.Println(err)
 		for _, h := range mux.server.Hook.ErrorRecovers {
 			h(ir, err)
 		}
@@ -202,7 +202,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if mux.server.isClosedAfterHandle {
-			log.Warn("Server closed.")
+			log.Println("Server closed.")
 			os.Exit(0)
 		}
 	}()
